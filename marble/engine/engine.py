@@ -75,6 +75,31 @@ class Engine:
         if generic_blocks:
             return max((block.strip() for block in generic_blocks), key=len, default="")
 
+        function_marker = "Result from the function:"
+        if function_marker in text:
+            function_part = text.split(function_marker, 1)[1].strip()
+            json_start = function_part.find("{")
+            json_end = function_part.rfind("}")
+            if json_start != -1 and json_end > json_start:
+                try:
+                    function_result = json.loads(function_part[json_start : json_end + 1])
+                    code_field = function_result.get("code")
+                    if isinstance(code_field, str) and code_field.strip():
+                        return code_field.strip()
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+        code_field_matches = re.findall(
+            r'"code"\s*:\s*"((?:\\.|[^"\\])*)"', text, re.DOTALL
+        )
+        for matched in code_field_matches:
+            try:
+                decoded = bytes(matched, "utf-8").decode("unicode_escape")
+                if decoded.strip():
+                    return decoded.strip()
+            except Exception:
+                continue
+
         return ""
 
     def _extract_solution_from_iterations(self, summary_data: Dict[str, Any]) -> str:
