@@ -77,6 +77,18 @@ class Engine:
             pass
 
         for candidate in candidates:
+            json_blocks = re.findall(
+                r"```json\s*(.*?)```", candidate, re.DOTALL | re.IGNORECASE
+            )
+            for json_block in json_blocks:
+                extracted = self._extract_solution_from_json_text(json_block)
+                if extracted:
+                    return extracted
+
+            extracted_from_candidate = self._extract_solution_from_json_text(candidate)
+            if extracted_from_candidate:
+                return extracted_from_candidate
+
             fenced_blocks = re.findall(
                 r"```python\s*(.*?)```", candidate, re.DOTALL | re.IGNORECASE
             )
@@ -96,9 +108,10 @@ class Engine:
                     if block:
                         return block
 
-            file_name_marker = candidate.find("# file_name_")
-            if file_name_marker != -1:
-                return candidate[file_name_marker:].strip()
+            for marker in ("# file_name_", "# solution.py"):
+                marker_index = candidate.find(marker)
+                if marker_index != -1:
+                    return candidate[marker_index:].strip()
 
             function_marker = "Result from the function:"
             if function_marker in candidate:
@@ -132,6 +145,87 @@ class Engine:
 
         return ""
 
+    def _extract_solution_from_json_text(self, text: str) -> str:
+        """
+        Parse JSON-like text and recover solution code from known fields.
+        """
+        if not text:
+            return ""
+
+        raw_candidates = [text.strip()]
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end > start:
+            raw_candidates.append(text[start : end + 1])
+
+        for raw in raw_candidates:
+            for parser in (json.loads, ast.literal_eval):
+                try:
+                    parsed = parser(raw)
+                except Exception:
+                    continue
+
+                extracted = self._extract_solution_from_json_obj(parsed)
+                if extracted:
+                    return extracted
+
+        return ""
+
+    def _extract_solution_from_json_obj(self, obj: Any) -> str:
+        """
+        Recover solution code from parsed JSON object.
+        """
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                if isinstance(key, str) and key.strip().lower() == "solution.py":
+                    return self._coerce_solution_value(value)
+
+            collected_snippets = self._collect_code_snippets(obj)
+            if collected_snippets:
+                return "\n\n".join(collected_snippets).strip()
+
+            for value in obj.values():
+                extracted = self._extract_solution_from_json_obj(value)
+                if extracted:
+                    return extracted
+
+        elif isinstance(obj, list):
+            for item in obj:
+                extracted = self._extract_solution_from_json_obj(item)
+                if extracted:
+                    return extracted
+
+        return ""
+
+    def _coerce_solution_value(self, value: Any) -> str:
+        """
+        Normalize solution field value to plain text code.
+        """
+        if isinstance(value, str):
+            return value.strip()
+        if isinstance(value, (dict, list)):
+            snippets = self._collect_code_snippets(value)
+            if snippets:
+                return "\n\n".join(snippets).strip()
+            return json.dumps(value, ensure_ascii=False, indent=2)
+        return str(value).strip()
+
+    def _collect_code_snippets(self, node: Any) -> List[str]:
+        """
+        Recursively collect values of keys named 'code'.
+        """
+        snippets: List[str] = []
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if isinstance(key, str) and key.strip().lower() == "code":
+                    if isinstance(value, str) and value.strip():
+                        snippets.append(value.strip())
+                snippets.extend(self._collect_code_snippets(value))
+        elif isinstance(node, list):
+            for item in node:
+                snippets.extend(self._collect_code_snippets(item))
+        return snippets
+
     def _extract_solution_from_iterations(self, summary_data: Dict[str, Any]) -> str:
         """
         Try to recover solution code from iteration task results when no file was written.
@@ -143,6 +237,13 @@ class Engine:
         for iteration in reversed(iterations):
             if not isinstance(iteration, dict):
                 continue
+
+            iteration_summary = iteration.get("summary")
+            if isinstance(iteration_summary, str):
+                code_from_summary = self._extract_code_from_text(iteration_summary)
+                if code_from_summary:
+                    return code_from_summary
+
             task_results = iteration.get("task_results", [])
             if not isinstance(task_results, list):
                 continue
