@@ -7,8 +7,6 @@ import os
 import re
 from typing import Any, Dict, List
 
-from ruamel.yaml import YAML
-
 from marble.agent import BaseAgent
 from marble.environments import BaseEnvironment
 from marble.llms.model_prompting import model_prompting
@@ -515,29 +513,23 @@ class Evaluator:
         Evaluate the code quality based on stricter criteria.
         """
         try:
-            config_path = "marble/configs/coding_config/coding_config.yaml"
-            if not os.path.exists(config_path):
-                self.logger.error("Config file not found")
-                return
-
-            yaml = YAML()
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = yaml.load(f)
-
-            full_task_description = config['task']['content']
+            full_task_description = task or ""
 
             requirements_start = "1. Implementation requirements:\n"
             requirements_end = "\n\n2. Project structure:"
-            requirements = full_task_description[
-                full_task_description.find(requirements_start) + len(requirements_start):
-                full_task_description.find(requirements_end)
-            ].strip()
+            requirements = full_task_description
+            start_index = full_task_description.find(requirements_start)
+            end_index = full_task_description.find(requirements_end)
+            if (
+                start_index != -1
+                and end_index != -1
+                and end_index > start_index + len(requirements_start)
+            ):
+                requirements = full_task_description[
+                    start_index + len(requirements_start) : end_index
+                ].strip()
 
-            solution_path = "marble/workspace/solution.py"
-            solution_content = ""
-            if os.path.exists(solution_path):
-                with open(solution_path, 'r', encoding='utf-8') as f:
-                    solution_content = f.read()
+            solution_content = code_result or ""
 
             code_quality_prompt_template = """
                     [Context]

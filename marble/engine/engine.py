@@ -59,6 +59,31 @@ class Engine:
             self.logger.error(f"Failed to read code from {file_path}: {e}")
             return ""
 
+    def _evaluate_code_quality_for_coding(self, summary_data: Dict[str, Any]) -> None:
+        """
+        Evaluate code quality for coding environment and write it to summary data.
+
+        Args:
+            summary_data (Dict[str, Any]): Summary data written to JSONL.
+        """
+        if not isinstance(self.environment, CodingEnvironment):
+            return
+
+        summary_data["code_quality"] = {}
+        code_path = os.path.join(self.environment.workspace_dir, "solution.py")
+        code = self._read_code_from_file(code_path)
+        if not code:
+            self.logger.warning(
+                f"No code found at {code_path}; skipped code quality evaluation."
+            )
+            return
+
+        self.evaluator.evaluate_code_quality(task=self.task, code_result=code)
+        summary_data["code_quality"] = self.evaluator.metrics.get("code_quality", {})
+        self.logger.info(
+            f"Code quality evaluation results: {summary_data['code_quality']}"
+        )
+
     def __init__(self, config: Config):
         """
         Initialize the Engine with the given configuration.
@@ -448,8 +473,11 @@ class Engine:
             summary_data["total_milestones"] = self.evaluator.metrics[
                 "total_milestones"
             ]
+            if isinstance(self.environment, CodingEnvironment):
+                self._evaluate_code_quality_for_coding(summary_data)
+                self.logger.info("Engine graph-based coordination loop completed.")
             # if self.environment.name == 'Research Environment':
-            if isinstance(self.environment, ResearchEnvironment):
+            elif isinstance(self.environment, ResearchEnvironment):
                 iteration_data_summary = iteration_data.get("summary")
                 assert isinstance(iteration_data_summary, str)
                 self.evaluator.evaluate_task_research(self.task, iteration_data_summary)
@@ -612,18 +640,8 @@ class Engine:
                     "task_evaluation"
                 ]
                 self.logger.info("Engine graph-based coordination loop completed.")
-            if self.environment.name == "Coding Environment":
-                code = self._read_code_from_file("MARBLE/marble/workspace/solution.py")
-                if code:
-                    self.evaluator.evaluate_code_quality(
-                        task=self.task, code_result=code
-                    )
-                    summary_data["code_quality"] = self.evaluator.metrics[
-                        "code_quality"
-                    ]
-                    self.logger.info(
-                        f"Code quality evaluation results: {self.evaluator.metrics['code_quality']}"
-                    )
+            if isinstance(self.environment, CodingEnvironment):
+                self._evaluate_code_quality_for_coding(summary_data)
                 self.logger.info("Engine star-based coordination loop completed.")
             elif self.environment.name == "World Simulation Environment":
                 self.evaluator.evaluate_task_world(self.task, iteration_data["summary"])
@@ -908,18 +926,8 @@ class Engine:
                     "task_evaluation"
                 ]
                 self.logger.info("Engine graph-based coordination loop completed.")
-            if self.environment.name == "Coding Environment":
-                code = self._read_code_from_file("MARBLE/marble/workspace/solution.py")
-                if code:
-                    self.evaluator.evaluate_code_quality(
-                        task=self.task, code_result=code
-                    )
-                    summary_data["code_quality"] = self.evaluator.metrics[
-                        "code_quality"
-                    ]
-                    self.logger.info(
-                        f"Code quality evaluation results: {self.evaluator.metrics['code_quality']}"
-                    )
+            if isinstance(self.environment, CodingEnvironment):
+                self._evaluate_code_quality_for_coding(summary_data)
                 self.logger.info("Engine tree-based coordination loop completed.")
             elif self.environment.name == "World Simulation Environment":
                 self.evaluator.evaluate_task_world(self.task, iteration_data["summary"])
