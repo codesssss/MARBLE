@@ -74,6 +74,21 @@ cp .env.template .env
 ```
 2. Fill the required environment variables in the `.env` file.
 
+### Configure custom LLM base URL
+You can configure `llm` as either a string (existing behavior) or an object with `model` and optional `base_url`.
+
+```yaml
+# Existing behavior
+llm: "gpt-4o-mini"
+
+# Custom endpoint behavior
+llm:
+  model: "openai/gpt-4o-mini"
+  base_url: "https://your-proxy-or-gateway/v1"
+```
+
+When `base_url` is set, MARBLE will use it for model calls through LiteLLM.
+
 ### Running the examples
 To run examples provided in the `examples`:
 

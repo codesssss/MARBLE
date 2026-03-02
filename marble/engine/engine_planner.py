@@ -6,7 +6,7 @@ Engine Planner module responsible for task assignment and scheduling.
 
 import json
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Union
 
 from litellm import token_counter
 from litellm.types.utils import Message
@@ -78,7 +78,7 @@ class EnginePlanner:
         memory: Any,
         config: Dict[str, Any],
         task: str,
-        model: str = "gpt-3.5-turbo",
+        model: Union[str, Dict[str, Any]] = "gpt-3.5-turbo",
     ):
         """
         Initialize the EnginePlanner.
@@ -88,7 +88,8 @@ class EnginePlanner:
             memory (Any): Shared memory instance (an instance of SharedMemory).
             config (Dict[str, Any]): Configuration parameters.
             task (str): The overall task description.
-            model (str, optional): The LLM model to use. Defaults to "gpt-3.5-turbo".
+            model (Union[str, Dict[str, Any]], optional): LLM config. Supports
+                model string or {"model": "...", "base_url": "..."}.
         """
         self.agent_graph = agent_graph
         self.memory = memory  # Expected to be an instance of SharedMemory.
@@ -96,7 +97,15 @@ class EnginePlanner:
         self.config = config
         self.current_progress = config.get("initial_progress", "")
         self.task = task
-        self.model = model
+        if isinstance(model, dict):
+            model_name = model.get("model", "gpt-3.5-turbo")
+            if not isinstance(model_name, str):
+                model_name = "gpt-3.5-turbo"
+            self.model = model_name
+            self.model_config: Dict[str, Any] = {**model, "model": self.model}
+        else:
+            self.model = model
+            self.model_config = {"model": self.model}
         self.token_usage = 0
         self.logger.info("EnginePlanner initialized.")
 
@@ -161,7 +170,7 @@ class EnginePlanner:
                     {"role": "user", "content": agent_prompt},
                 ]
                 response_agent = model_prompting(
-                    llm_model=self.model,
+                    llm_model=self.model_config,
                     messages=messages_agent,
                     return_num=1,
                     max_token_num=512,
@@ -207,7 +216,7 @@ class EnginePlanner:
                 {"role": "user", "content": final_prompt},
             ]
             response_final = model_prompting(
-                llm_model=self.model,
+                llm_model=self.model_config,
                 messages=messages_final,
                 return_num=1,
                 max_token_num=1024,
@@ -274,7 +283,7 @@ class EnginePlanner:
                 {"role": "user", "content": cognitive_prompt},
             ]
             response = model_prompting(
-                llm_model=self.model,
+                llm_model=self.model_config,
                 messages=messages,
                 return_num=1,
                 max_token_num=1024,
@@ -331,7 +340,7 @@ class EnginePlanner:
                 {"role": "user", "content": prompt},
             ]
             response = model_prompting(
-                llm_model=self.model,
+                llm_model=self.model_config,
                 messages=messages,
                 return_num=1,
                 max_token_num=1024,
@@ -374,7 +383,7 @@ class EnginePlanner:
                 {"role": "user", "content": prompt},
             ]
             response = model_prompting(
-                llm_model=self.model,
+                llm_model=self.model_config,
                 messages=messages,
                 return_num=1,
                 max_token_num=1024,
@@ -419,7 +428,7 @@ class EnginePlanner:
             str: The summarized output.
         """
         response = model_prompting(
-            llm_model=self.model,
+            llm_model=self.model_config,
             messages=[
                 {
                     "role": "user",
@@ -476,7 +485,7 @@ class EnginePlanner:
 
         messages = [{"role": "system", "content": prompt}]
         response = model_prompting(
-            llm_model=self.model,
+            llm_model=self.model_config,
             messages=messages,
             return_num=1,
             max_token_num=256,
