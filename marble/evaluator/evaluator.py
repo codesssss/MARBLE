@@ -43,6 +43,15 @@ class Evaluator:
         evaluate_llm_config = self.metrics_config.get('evaluate_llm', {})
         self.llm = evaluate_llm_config.get('model', 'gpt-3.5-turbo') if isinstance(evaluate_llm_config, dict) else evaluate_llm_config
 
+    def _fill_prompt_template(self, template: str, **kwargs: Any) -> str:
+        """
+        Fill known placeholders like {task} without interpreting other braces.
+        """
+        prompt = template
+        for key, value in kwargs.items():
+            prompt = prompt.replace("{" + key + "}", str(value))
+        return prompt
+
 
 
     def update(self, environment: BaseEnvironment, agents: List[BaseAgent]) -> None:
@@ -74,7 +83,9 @@ class Evaluator:
         # Get the communication prompt
         communication_prompt_template = self.evaluation_prompts["Graph"]["Communication"]["prompt"]
         # Fill in the placeholders {task} and {communications}
-        prompt = communication_prompt_template.format(task=task, communications=communications)
+        prompt = self._fill_prompt_template(
+            communication_prompt_template, task=task, communications=communications
+        )
         # Call the language model
         result = model_prompting(
             llm_model=self.llm,
@@ -104,11 +115,12 @@ class Evaluator:
         # Get the planning prompt
         planning_prompt_template = self.evaluation_prompts["Graph"]["Planning"]["prompt"]
         # Fill in the placeholders
-        prompt = planning_prompt_template.format(
+        prompt = self._fill_prompt_template(
+            planning_prompt_template,
             summary=summary,
             agent_profiles=agent_profiles,
             agent_tasks=agent_tasks,
-            results=results
+            results=results,
         )
         # Call the language model
         result = model_prompting(
@@ -141,7 +153,9 @@ class Evaluator:
             agent_results = agent_results[:MAX_LENGTH] + "..."
         kpi_prompt_template = self.evaluation_prompts["Graph"]["KPI"]["prompt"]
         # Fill in the placeholders {task} and {agent_results}
-        prompt = kpi_prompt_template.format(task=task, agent_results=agent_results)
+        prompt = self._fill_prompt_template(
+            kpi_prompt_template, task=task, agent_results=agent_results
+        )
         # Call the language model
         result = model_prompting(
             llm_model=self.llm,
@@ -177,7 +191,7 @@ class Evaluator:
         # Get the research evaluation prompt
         research_prompt_template = self.evaluation_prompts["research"]["task_evaluation"]["prompt"]
         # Fill in the placeholders {task} and {result}
-        prompt = research_prompt_template.format(task=task, result=result)
+        prompt = self._fill_prompt_template(research_prompt_template, task=task, result=result)
         # Call the language model
         llm_response = model_prompting(
             llm_model=self.llm,
@@ -208,7 +222,7 @@ class Evaluator:
         # change the prompt to evaluate buyer and seller
         # world_prompt_template = self.evaluation_prompts["world"]["task_evaluation"]["buyer_prompt"]
         world_prompt_template = self.evaluation_prompts["world"]["task_evaluation"]["seller_prompt"]
-        prompt = world_prompt_template.format(task=task, result=result)
+        prompt = self._fill_prompt_template(world_prompt_template, task=task, result=result)
 
         llm_response = model_prompting(
             llm_model=self.llm,
@@ -572,10 +586,11 @@ class Evaluator:
             """
 
             # Fill in the template
-            prompt = code_quality_prompt_template.format(
+            prompt = self._fill_prompt_template(
+                code_quality_prompt_template,
                 task_description=full_task_description,
                 requirements=requirements,
-                solution=solution_content
+                solution=solution_content,
             )
 
             # Call the LLM
