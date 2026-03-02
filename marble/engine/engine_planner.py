@@ -131,6 +131,19 @@ class EnginePlanner:
         # (The final JSON output instructions will be appended in each planning method.)
         return prompt
 
+    def _fallback_assignment(self) -> Dict[str, Any]:
+        """
+        Build a safe fallback assignment when planner JSON parsing fails.
+        """
+        tasks = {
+            agent.agent_id: (
+                f"Continue working on the main task: {self.task}\n"
+                "If possible, use the available coding tools to produce/update solution.py."
+            )
+            for agent in self.agent_graph.get_all_agents()
+        }
+        return {"tasks": tasks, "continue": True}
+
     def assign_tasks(self, planning_method: str = "naive") -> Dict[str, Any]:
         """
         Assign tasks to agents by interacting with the LLM using one of four planning strategies.
@@ -174,7 +187,7 @@ class EnginePlanner:
                     messages=messages_agent,
                     return_num=1,
                     max_token_num=512,
-                    temperature=0.7,
+                    temperature=0.0,
                     top_p=1.0,
                 )
                 proposal = (
@@ -220,7 +233,7 @@ class EnginePlanner:
                 messages=messages_final,
                 return_num=1,
                 max_token_num=1024,
-                temperature=0.7,
+                temperature=0.0,
                 top_p=1.0,
             )
             messages_for_token = messages_final + [
@@ -239,7 +252,10 @@ class EnginePlanner:
                 self.logger.error(
                     f"Failed to parse JSON response in group discussion: {e}"
                 )
-                return {"tasks": {}, "continue": False}
+                self.logger.warning(
+                    "Falling back to default assignments for group discussion mode."
+                )
+                return self._fallback_assignment()
 
         # ----- COGNITIVE EVOLVE MODE -----
         elif planning_method == "cognitive_evolve":
@@ -287,7 +303,7 @@ class EnginePlanner:
                 messages=messages,
                 return_num=1,
                 max_token_num=1024,
-                temperature=0.7,
+                temperature=0.0,
                 top_p=1.0,
             )
             messages_for_token = messages + [
@@ -318,7 +334,10 @@ class EnginePlanner:
                 self.logger.error(
                     f"Failed to parse JSON response in cognitive evolve: {e}"
                 )
-                return {"tasks": {}, "continue": False}
+                self.logger.warning(
+                    "Falling back to default assignments for cognitive evolve mode."
+                )
+                return self._fallback_assignment()
 
         # ----- CHAIN-OF-THOUGHT (cot) MODE -----
         elif planning_method == "cot":
@@ -344,7 +363,7 @@ class EnginePlanner:
                 messages=messages,
                 return_num=1,
                 max_token_num=1024,
-                temperature=0.7,
+                temperature=0.0,
                 top_p=1.0,
             )
             messages_for_token = messages + [
@@ -353,11 +372,20 @@ class EnginePlanner:
             self.token_usage += token_counter(
                 model=self.model, messages=messages_for_token
             )
-            response_json = json_parse(response[0].content)
-            self.logger.debug(
-                f"Received task assignment using chain-of-thought planning: {response}"
-            )
-            return response_json
+            try:
+                response_json = json_parse(response[0].content)
+                self.logger.debug(
+                    f"Received task assignment using chain-of-thought planning: {response_json}"
+                )
+                return response_json
+            except (json.JSONDecodeError, ValueError) as e:
+                self.logger.error(
+                    f"Failed to parse JSON response in cot mode: {e}"
+                )
+                self.logger.warning(
+                    "Falling back to default assignments for cot mode."
+                )
+                return self._fallback_assignment()
 
         # ----- NAIVE MODE (DEFAULT) -----
         else:
@@ -370,7 +398,7 @@ class EnginePlanner:
                 '    "agent1": "...", \n'
                 '    "agent2": "..." \n'
                 "  },\n"
-                '  "continue": true\n // Set to false if the task is completed\n'
+                '  "continue": true\n'
                 "}\n"
             )
             system_message = (
@@ -387,7 +415,7 @@ class EnginePlanner:
                 messages=messages,
                 return_num=1,
                 max_token_num=1024,
-                temperature=0.7,
+                temperature=0.0,
                 top_p=1.0,
             )
             messages_for_token = messages + [
@@ -405,7 +433,10 @@ class EnginePlanner:
                 return assignment
             except (json.JSONDecodeError, ValueError) as e:
                 self.logger.error(f"Failed to parse JSON response in naive mode: {e}")
-                return {"tasks": {}, "continue": False}
+                self.logger.warning(
+                    "Falling back to default assignments for naive mode."
+                )
+                return self._fallback_assignment()
 
     def update_progress(self, summary: str) -> None:
         """
