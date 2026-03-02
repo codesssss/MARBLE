@@ -6,6 +6,7 @@ The core engine module that coordinates agents within the environment.
 import json
 import os
 import re
+import ast
 from typing import Any, Dict, List, Optional, Union
 
 from marble.agent import BaseAgent
@@ -67,38 +68,67 @@ class Engine:
         if not text:
             return ""
 
-        fenced_blocks = re.findall(r"```python\s*(.*?)```", text, re.DOTALL | re.IGNORECASE)
-        if fenced_blocks:
-            return max((block.strip() for block in fenced_blocks), key=len, default="")
+        candidates = [text]
+        try:
+            decoded_text = bytes(text, "utf-8").decode("unicode_escape")
+            if decoded_text and decoded_text != text:
+                candidates.append(decoded_text)
+        except Exception:
+            pass
 
-        generic_blocks = re.findall(r"```\s*(.*?)```", text, re.DOTALL)
-        if generic_blocks:
-            return max((block.strip() for block in generic_blocks), key=len, default="")
+        for candidate in candidates:
+            fenced_blocks = re.findall(
+                r"```python\s*(.*?)```", candidate, re.DOTALL | re.IGNORECASE
+            )
+            if fenced_blocks:
+                return max((block.strip() for block in fenced_blocks), key=len, default="")
 
-        function_marker = "Result from the function:"
-        if function_marker in text:
-            function_part = text.split(function_marker, 1)[1].strip()
-            json_start = function_part.find("{")
-            json_end = function_part.rfind("}")
-            if json_start != -1 and json_end > json_start:
-                try:
-                    function_result = json.loads(function_part[json_start : json_end + 1])
-                    code_field = function_result.get("code")
-                    if isinstance(code_field, str) and code_field.strip():
-                        return code_field.strip()
-                except (json.JSONDecodeError, TypeError):
-                    pass
+            generic_blocks = re.findall(r"```\s*(.*?)```", candidate, re.DOTALL)
+            if generic_blocks:
+                for block in sorted(
+                    (block.strip() for block in generic_blocks),
+                    key=len,
+                    reverse=True,
+                ):
+                    nested_code = self._extract_code_from_text(block)
+                    if nested_code:
+                        return nested_code
+                    if block:
+                        return block
 
-        code_field_matches = re.findall(
-            r'"code"\s*:\s*"((?:\\.|[^"\\])*)"', text, re.DOTALL
-        )
-        for matched in code_field_matches:
-            try:
-                decoded = bytes(matched, "utf-8").decode("unicode_escape")
-                if decoded.strip():
-                    return decoded.strip()
-            except Exception:
-                continue
+            file_name_marker = candidate.find("# file_name_")
+            if file_name_marker != -1:
+                return candidate[file_name_marker:].strip()
+
+            function_marker = "Result from the function:"
+            if function_marker in candidate:
+                function_part = candidate.split(function_marker, 1)[1].strip()
+                json_start = function_part.find("{")
+                json_end = function_part.rfind("}")
+                if json_start != -1 and json_end > json_start:
+                    payload = function_part[json_start : json_end + 1]
+                    for parser in (json.loads, ast.literal_eval):
+                        try:
+                            parsed = parser(payload)
+                            if isinstance(parsed, dict):
+                                code_field = parsed.get("code")
+                                if isinstance(code_field, str) and code_field.strip():
+                                    return code_field.strip()
+                        except Exception:
+                            continue
+
+            for pattern in (
+                r'"code"\s*:\s*"((?:\\.|[^"\\])*)"',
+                r"'code'\s*:\s*'((?:\\.|[^'\\])*)'",
+            ):
+                code_field_matches = re.findall(pattern, candidate, re.DOTALL)
+                for matched in code_field_matches:
+                    try:
+                        decoded = bytes(matched, "utf-8").decode("unicode_escape")
+                        if decoded.strip():
+                            return decoded.strip()
+                    except Exception:
+                        continue
 
         return ""
 
