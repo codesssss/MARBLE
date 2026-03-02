@@ -5,6 +5,7 @@ The core engine module that coordinates agents within the environment.
 """
 import json
 import os
+import re
 from typing import Any, Dict, List, Optional, Union
 
 from marble.agent import BaseAgent
@@ -59,6 +60,56 @@ class Engine:
             self.logger.error(f"Failed to read code from {file_path}: {e}")
             return ""
 
+    def _extract_code_from_text(self, text: str) -> str:
+        """
+        Extract the best-effort Python code snippet from a model text output.
+        """
+        if not text:
+            return ""
+
+        fenced_blocks = re.findall(r"```python\s*(.*?)```", text, re.DOTALL | re.IGNORECASE)
+        if fenced_blocks:
+            return max((block.strip() for block in fenced_blocks), key=len, default="")
+
+        generic_blocks = re.findall(r"```\s*(.*?)```", text, re.DOTALL)
+        if generic_blocks:
+            return max((block.strip() for block in generic_blocks), key=len, default="")
+
+        return ""
+
+    def _extract_solution_from_iterations(self, summary_data: Dict[str, Any]) -> str:
+        """
+        Try to recover solution code from iteration task results when no file was written.
+        """
+        iterations = summary_data.get("iterations", [])
+        if not isinstance(iterations, list):
+            return ""
+
+        for iteration in reversed(iterations):
+            if not isinstance(iteration, dict):
+                continue
+            task_results = iteration.get("task_results", [])
+            if not isinstance(task_results, list):
+                continue
+
+            for item in reversed(task_results):
+                text_candidates: List[str] = []
+                if isinstance(item, dict):
+                    if "result" in item and isinstance(item["result"], str):
+                        text_candidates.append(item["result"])
+                    for value in item.values():
+                        if isinstance(value, str):
+                            text_candidates.append(value)
+                elif isinstance(item, str):
+                    text_candidates.append(item)
+
+                for candidate in text_candidates:
+                    code = self._extract_code_from_text(candidate)
+                    if code:
+                        return code
+
+        return ""
+
     def _evaluate_code_quality_for_coding(self, summary_data: Dict[str, Any]) -> None:
         """
         Evaluate code quality for coding environment and write it to summary data.
@@ -73,10 +124,20 @@ class Engine:
         code_path = os.path.join(self.environment.workspace_dir, "solution.py")
         code = self._read_code_from_file(code_path)
         if not code:
-            self.logger.warning(
-                f"No code found at {code_path}; skipped code quality evaluation."
-            )
-            return
+            extracted_code = self._extract_solution_from_iterations(summary_data)
+            if extracted_code:
+                os.makedirs(self.environment.workspace_dir, exist_ok=True)
+                with open(code_path, "w", encoding="utf-8") as code_file:
+                    code_file.write(extracted_code)
+                code = extracted_code
+                self.logger.info(
+                    f"Recovered solution code from task results and wrote to {code_path}."
+                )
+            else:
+                self.logger.warning(
+                    f"No code found at {code_path}; skipped code quality evaluation."
+                )
+                return
 
         self.evaluator.evaluate_code_quality(task=self.task, code_result=code)
         summary_data["code_quality"] = self.evaluator.metrics.get("code_quality", {})
