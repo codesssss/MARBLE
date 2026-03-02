@@ -4,6 +4,7 @@
 The core engine module that coordinates agents within the environment.
 """
 import json
+import os
 from typing import Any, Dict, List, Optional, Union
 
 from marble.agent import BaseAgent

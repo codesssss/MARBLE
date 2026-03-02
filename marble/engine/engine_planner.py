@@ -235,7 +235,7 @@ class EnginePlanner:
                     f"Received task assignment using group discussion: {assignment}"
                 )
                 return assignment
-            except json.JSONDecodeError as e:
+            except (json.JSONDecodeError, ValueError) as e:
                 self.logger.error(
                     f"Failed to parse JSON response in group discussion: {e}"
                 )
@@ -314,7 +314,7 @@ class EnginePlanner:
                         assignment.get("evolving_experiences", ""),
                     )
                 return assignment
-            except json.JSONDecodeError as e:
+            except (json.JSONDecodeError, ValueError) as e:
                 self.logger.error(
                     f"Failed to parse JSON response in cognitive evolve: {e}"
                 )
@@ -403,7 +403,7 @@ class EnginePlanner:
                     f"Received task assignment using naive planning: {assignment}"
                 )
                 return assignment
-            except json.JSONDecodeError as e:
+            except (json.JSONDecodeError, ValueError) as e:
                 self.logger.error(f"Failed to parse JSON response in naive mode: {e}")
                 return {"tasks": {}, "continue": False}
 
@@ -501,6 +501,20 @@ class EnginePlanner:
             decision = json_parse(response[0].content)
             self.logger.debug(f"Received continuation decision: {decision}")
             return decision.get("continue", False)
-        except json.JSONDecodeError as e:
+        except (json.JSONDecodeError, ValueError) as e:
             self.logger.error(f"Failed to parse JSON decision response: {e}")
-            return False
+            raw_content = (response[0].content or "").lower()
+            if '"continue": true' in raw_content:
+                self.logger.warning(
+                    "Falling back to continue=True based on raw response content."
+                )
+                return True
+            if '"continue": false' in raw_content:
+                self.logger.warning(
+                    "Falling back to continue=False based on raw response content."
+                )
+                return False
+            self.logger.warning(
+                "No parsable continue flag found, defaulting to continue=True."
+            )
+            return True
