@@ -1,3 +1,5 @@
+import os
+
 import litellm
 from beartype import beartype
 from beartype.typing import Any, Dict, List, Optional, Tuple, Union
@@ -29,6 +31,12 @@ def _resolve_model_and_base_url(
     else:
         model_name = llm_model
         base_url = None
+
+    # Optional global override from environment.
+    if base_url is None:
+        env_base_url = os.getenv("MARBLE_LLM_BASE_URL")
+        if env_base_url:
+            base_url = env_base_url
 
     # Keep backward compatibility for legacy together_ai routing.
     if base_url is None and "together_ai/TA" in model_name:

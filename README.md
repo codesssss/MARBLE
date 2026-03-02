@@ -74,6 +74,10 @@ cp .env.template .env
 ```
 2. Fill the required environment variables in the `.env` file.
 
+Optional:
+- `MARBLE_LLM_BASE_URL` sets a global default model endpoint for MARBLE.
+- If `llm.base_url` is explicitly set in YAML, it takes precedence over `MARBLE_LLM_BASE_URL`.
+
 ### Configure custom LLM base URL
 You can configure `llm` as either a string (existing behavior) or an object with `model` and optional `base_url`.
 
