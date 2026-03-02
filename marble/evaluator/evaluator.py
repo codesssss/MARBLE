@@ -321,11 +321,14 @@ class Evaluator:
                 # Ensure ratings are integers
                 ratings_dict: Dict[str, int] = {k: int(v) for k, v in ratings.items()}
                 return ratings_dict
-            except json.JSONDecodeError:
-                self.logger.error("Failed to parse JSON from assistant's answer.")
-                return {}
-        else:
+
             self.logger.error("No JSON found in assistant's answer.")
+            return {}
+        except json.JSONDecodeError:
+            self.logger.error("Failed to parse JSON from assistant's answer.")
+            return {}
+        except (ValueError, TypeError):
+            self.logger.error("Failed to cast research ratings to int.")
             return {}
 
     def parse_score(self, assistant_answer: str) -> int:
