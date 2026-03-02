@@ -1098,6 +1098,9 @@ class Engine:
             "file_path", "result/discussion_output.jsonl"
         )
         try:
+            output_dir = os.path.dirname(file_path)
+            if output_dir:
+                os.makedirs(output_dir, exist_ok=True)
             with open(file_path, "a") as jsonl_file:
                 print(summary_data)
                 jsonl_file.write(json.dumps(summary_data) + "\n")
